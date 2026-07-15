@@ -204,13 +204,13 @@
         serviceName: item.service,
         domain: item.domain,
         classificationCount: item.count,
-        activityScore: Math.min(100, item.count * 20),
-        confidence: Math.min(100, item.count * 18),
+        activityScore: item.activityScore ?? 0,
+        confidence: item.confidence ?? 0,
         firstSeen: item.firstSeen,
         lastSeen: item.lastSeen,
-        recommendation: item.count >= 3 ? 'KEEP' : item.count === 2 ? 'REVIEW' : 'LIKELY_UNUSED',
-        reasons: [item.from, item.subject].filter(Boolean),
-        signalBreakdown: { MAIL: item.count },
+        recommendation: item.recommendation || 'UNKNOWN',
+        reasons: item.reasons || [],
+        signalBreakdown: item.signalBreakdown || {},
       }));
       state.connected = true;
       authValue.textContent = 'Connected';
