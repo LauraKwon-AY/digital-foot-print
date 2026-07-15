@@ -1,4 +1,5 @@
 from datetime import datetime
+from pydantic import Field
 from pydantic import BaseModel, ConfigDict
 
 
@@ -21,7 +22,7 @@ class AnalyzeRequest(BaseModel):
     user_email: str
     query: str = "all"
     threshold: int = 60
-    messages: list[dict] = []
+    messages: list[dict] = Field(default_factory=list)
 
 
 class EvidenceOut(BaseModel):
@@ -47,8 +48,8 @@ class ServiceOut(BaseModel):
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None
     deletion_url: str | None = None
-    reasons: list[str] = []
-    evidence: list[EvidenceOut] = []
+    reasons: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceOut] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

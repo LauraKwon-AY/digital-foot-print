@@ -4,16 +4,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 DEFAULT_RULES = [
-    ("PASSWORD_RESET", ["password reset", "reset your password", "new password", "비밀번호 재설정"]),
-    ("LOGIN_ALERT", ["new sign-in", "login alert", "security alert", "sign in", "새 로그인"]),
-    ("SECURITY", ["security", "verification code", "2-step", "authentication", "보안"]),
-    ("PAYMENT", ["receipt", "invoice", "payment", "billing", "결제"]),
-    ("SUBSCRIPTION", ["subscription", "renewal", "subscription update", "membership", "구독"]),
-    ("PURCHASE", ["order confirmed", "order receipt", "purchase", "shipped", "주문"]),
-    ("WELCOME_EMAIL", ["welcome", "thanks for signing up", "get started", "가입을 환영"]),
-    ("VERIFY_EMAIL", ["verify your email", "confirm your email", "verification", "인증"]),
-    ("ACCOUNT_UPDATE", ["account update", "profile updated", "terms updated", "policy", "계정 업데이트"]),
-    ("NEWSLETTER", ["newsletter", "weekly", "digest", "unsubscribe", "news"]),
+    ("PASSWORD_RESET", ["password reset", "reset your password", "new password"]),
+    ("LOGIN_ALERT", ["new sign-in", "login alert", "security alert", "sign in"]),
+    ("SECURITY", ["security", "verification code", "2-step", "authentication"]),
+    ("PAYMENT", ["receipt", "invoice", "payment", "billing"]),
+    ("SUBSCRIPTION", ["subscription", "renewal", "membership"]),
+    ("PURCHASE", ["order confirmed", "order receipt", "purchase", "shipped"]),
+    ("WELCOME_EMAIL", ["welcome", "thanks for signing up", "get started"]),
+    ("VERIFY_EMAIL", ["verify your email", "confirm your email", "verification"]),
+    ("ACCOUNT_UPDATE", ["account update", "profile updated", "terms updated", "policy"]),
+    ("NEWSLETTER", ["newsletter", "weekly", "digest", "unsubscribe"]),
 ]
 
 
@@ -66,13 +66,14 @@ def classify_mail(message: dict[str, Any], enabled_rules: list[dict[str, Any]] |
     rules = enabled_rules or [{"mail_type": t, "pattern": " | ".join(signals)} for t, signals in DEFAULT_RULES]
     mail_type = "UNKNOWN"
     matched_rule = None
+    rule_types = {rule_type for rule_type, _ in DEFAULT_RULES}
 
     for rule in rules:
         rule_type = rule.get("mail_type") or "UNKNOWN"
         pattern = rule.get("pattern") or ""
         candidates = [part.strip() for part in pattern.split("|") if part.strip()]
         if any(normalize_text(candidate) in haystack for candidate in candidates):
-            mail_type = rule_type if rule_type in {r[0] for r in DEFAULT_RULES} else "UNKNOWN"
+            mail_type = rule_type if rule_type in rule_types else "UNKNOWN"
             matched_rule = rule.get("name") or pattern
             break
 
@@ -120,31 +121,31 @@ def score_service(messages: list[dict[str, Any]]) -> dict[str, Any]:
             activity_score += 6
 
     if any(m["type"] == "LOGIN_ALERT" for m in messages):
-        reasons.append("최근 로그인 알림 메일 발견")
+        reasons.append("Recent login alert mail found")
     if any(m["type"] == "PASSWORD_RESET" for m in messages):
-        reasons.append("비밀번호 재설정 메일 발견")
+        reasons.append("Password reset mail found")
     if any(m["type"] == "PAYMENT" for m in messages):
-        reasons.append("결제/청구 메일 발견")
+        reasons.append("Payment or receipt mail found")
     if any(m["type"] == "PURCHASE" for m in messages):
-        reasons.append("구매 확인 메일 발견")
+        reasons.append("Purchase confirmation mail found")
     if any(m["type"] == "NEWSLETTER" for m in messages):
-        reasons.append("뉴스레터만 지속 수신")
+        reasons.append("Newsletter mail found")
 
     if last_seen:
         parsed = _parse_iso(last_seen)
         age_days = (datetime.now(timezone.utc) - parsed).days
         if age_days > 365:
-            reasons.append(f"최근 {age_days}일 활동 없음")
+            reasons.append(f"Last activity older than {age_days} days")
             activity_score -= 18
         if age_days > 730:
             activity_score -= 12
     else:
-        reasons.append("마지막 활동 시점이 없음")
+        reasons.append("No clear last activity date")
 
     if mail_frequency == 1:
-        reasons.append("메일 수가 매우 적음")
+        reasons.append("Only one signal mail found")
     elif mail_frequency >= 5:
-        reasons.append(f"관련 메일 {mail_frequency}건 확인")
+        reasons.append(f"{mail_frequency} signal mails found")
 
     return {
         "activity_score": max(0, min(100, round(activity_score))),
@@ -178,17 +179,20 @@ def build_service_candidates(classified_mails: list[dict[str, Any]], threshold: 
         service_map[service_key].append(mail)
 
     services = []
-    for service_key, mails in service_map.items():
+    for mails in service_map.values():
         score = score_service(mails)
-        services.append({
-            "service_key": service_key,
-            "canonical_service_name": normalize_service(mails[0]["domain"])["canonical_service_name"],
-            "primary_domain": mails[0]["domain"],
-            "category": None,
-            **score,
-            "status": recommend_service(score, threshold),
-            "evidence": mails,
-        })
+        normalized = normalize_service(mails[0]["domain"])
+        services.append(
+            {
+                "service_key": normalized["service_key"],
+                "canonical_service_name": normalized["canonical_service_name"],
+                "primary_domain": normalized["primary_domain"],
+                "category": None,
+                **score,
+                "status": recommend_service(score, threshold),
+                "evidence": mails,
+            }
+        )
 
     return sorted(services, key=lambda item: item["activity_score"], reverse=True)
 

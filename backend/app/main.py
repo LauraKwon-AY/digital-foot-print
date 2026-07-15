@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,9 +14,17 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Digital Footprint Manager API")
 
+cors_origins = [
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+
+if os.getenv("FRONTEND_ORIGIN"):
+    cors_origins.append(os.environ["FRONTEND_ORIGIN"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
