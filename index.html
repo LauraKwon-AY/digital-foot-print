@@ -212,6 +212,7 @@
     const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
     const STORAGE_KEY = 'dfm-mvp-v1';
     const DEFAULT_USER_EMAIL = 'demo@example.com';
+    const APP_ORIGIN = window.location.origin;
 
     const connectBtn = document.getElementById('connectBtn');
     const scanBtn = document.getElementById('scanBtn');
@@ -243,6 +244,10 @@
     }
     function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
+    function originHelpText() {
+      return `Current origin: ${APP_ORIGIN}. If this is not added to Google Cloud Console Authorized JavaScript origins, Google sign-in will fail.`;
+    }
+
     function initTokenClient() {
       if (!window.google?.accounts?.oauth2 || tokenClient) return;
       tokenClient = google.accounts.oauth2.initTokenClient({
@@ -267,6 +272,10 @@
       initTokenClient();
       if (!tokenClient) {
         scanStatus.textContent = 'Google Identity Services is still loading. Try again in a moment.';
+        return;
+      }
+      if (APP_ORIGIN === 'null' || APP_ORIGIN === 'file://') {
+        scanStatus.textContent = 'Open this page from a local server such as http://localhost, not from file://';
         return;
       }
       tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
@@ -513,6 +522,7 @@
 
     queryEl.value = state.query;
     thresholdEl.value = state.threshold;
+    scanStatus.textContent = originHelpText();
     render();
     loadRules().catch(() => {});
     loadHistory().catch(() => {});
