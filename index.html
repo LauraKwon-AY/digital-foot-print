@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Footprint Manager MVP</title>
+  <style>
+    :root {
+      --panel: rgba(11, 22, 39, 0.82);
+      --panel-2: rgba(17, 29, 49, 0.92);
+      --line: rgba(148, 163, 184, 0.16);
+      --text: #edf2f7;
+      --muted: #9fb0c6;
+      --accent: #6ee7b7;
+      --accent-2: #60a5fa;
+      --shadow: 0 24px 90px rgba(2, 8, 23, 0.5);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: Inter, "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(96, 165, 250, 0.18), transparent 32%),
+        radial-gradient(circle at top right, rgba(110, 231, 183, 0.12), transparent 28%),
+        linear-gradient(145deg, #040913 0%, #091324 40%, #0d1728 100%);
+      min-height: 100vh;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+      opacity: 0.25;
+    }
+    .shell { width: min(1200px, calc(100% - 32px)); margin: 24px auto; display: grid; gap: 18px; }
+    .hero, .panel {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent), var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      border-radius: var(--radius-xl);
+    }
+    .hero { padding: 28px; position: relative; overflow: hidden; }
+    .hero-grid { display: grid; grid-template-columns: 1.2fr 0.9fr; gap: 20px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border: 1px solid rgba(110, 231, 183, 0.22);
+      border-radius: 999px;
+      color: var(--accent);
+      font-size: 0.8rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 700;
+      background: rgba(110, 231, 183, 0.06);
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); line-height: 0.98; letter-spacing: -0.04em; max-width: 12ch; }
+    .lede { margin: 18px 0 0; color: var(--muted); line-height: 1.7; max-width: 68ch; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    button {
+      appearance: none; border: 0; border-radius: 999px; padding: 12px 18px; font: inherit; font-weight: 700;
+      color: #07111f; background: #dbeafe; cursor: pointer; transition: transform 160ms ease, filter 160ms ease, opacity 160ms ease;
+    }
+    button:hover { transform: translateY(-1px); filter: brightness(1.03); }
+    button.primary { background: linear-gradient(135deg, var(--accent), #bbf7d0); }
+    button.secondary { background: linear-gradient(135deg, var(--accent-2), #bfdbfe); }
+    button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    .stats-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .stat { padding: 18px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: rgba(10, 18, 34, 0.62); }
+    .stat .label { color: rgba(159, 176, 198, 0.85); font-size: 0.84rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    .stat .value { margin-top: 8px; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.04em; }
+    .stat .hint { margin-top: 6px; color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
+    .layout { display: grid; grid-template-columns: 0.95fr 1.25fr; gap: 18px; }
+    .panel { padding: 20px; }
+    .panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 14px; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; background: rgba(148, 163, 184, 0.07); }
+    .field { display: grid; gap: 8px; margin-bottom: 14px; }
+    .field label { color: var(--muted); font-size: 0.94rem; }
+    .field select { width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(7, 17, 31, 0.88); color: var(--text); outline: none; }
+    .switches { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+    .switch { padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: rgba(148, 163, 184, 0.06); color: var(--muted); cursor: pointer; }
+    .switch.active { border-color: rgba(110, 231, 183, 0.32); color: var(--text); background: rgba(110, 231, 183, 0.10); }
+    .list { display: grid; gap: 12px; }
+    .service { border: 1px solid var(--line); background: var(--panel-2); border-radius: var(--radius-lg); padding: 14px; display: grid; gap: 12px; }
+    .service-top { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+    .service-name { font-size: 1.02rem; font-weight: 800; margin-bottom: 4px; }
+    .service-meta { color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pill { padding: 7px 10px; border-radius: 999px; font-size: 0.8rem; border: 1px solid var(--line); color: var(--muted); background: rgba(255,255,255,0.03); }
+    .pill.good { color: #d1fae5; border-color: rgba(110,231,183,0.24); background: rgba(110,231,183,0.08); }
+    .pill.warn { color: #fef3c7; border-color: rgba(251,191,36,0.26); background: rgba(251,191,36,0.08); }
+    .pill.danger { color: #ffe4e6; border-color: rgba(251,113,133,0.24); background: rgba(251,113,133,0.08); }
+    .service-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .footer-note, .status { color: var(--muted); line-height: 1.7; font-size: 0.94rem; }
+    .empty { padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius-lg); color: var(--muted); line-height: 1.7; background: rgba(148, 163, 184, 0.05); }
+    @media (max-width: 980px) { .hero-grid, .layout { grid-template-columns: 1fr; } h1 { max-width: none; } }
+    @media (max-width: 560px) { .shell { width: min(100% - 18px, 1200px); margin: 10px auto 18px; } .hero, .panel { padding: 18px; border-radius: 22px; } .stats-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Digital Footprint Manager</div>
+      <div class="hero-grid">
+        <div>
+          <h1>Gmail mail classification MVP</h1>
+          <p class="lede">
+            This version connects to Google OAuth, reads Gmail metadata only, classifies each mail,
+            normalizes services, and surfaces likely-used / review / likely-unused candidates.
+          </p>
+          <div class="hero-actions">
+            <button id="connectBtn" class="primary">Connect Google</button>
+            <button id="scanBtn" class="secondary">Run Analysis</button>
+            <button id="resetBtn" class="ghost">Reset</button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat"><div class="label">Candidates</div><div class="value" id="countValue">0</div><div class="hint">Services normalized from Gmail</div></div>
+          <div class="stat"><div class="label">Cleanup picks</div><div class="value" id="recommendValue">0</div><div class="hint">Likely unused or low signal</div></div>
+          <div class="stat"><div class="label">Connection</div><div class="value" id="authValue" style="font-size:1.25rem;">Not connected</div><div class="hint">OAuth status</div></div>
+          <div class="stat"><div class="label">Data scope</div><div class="value" style="font-size:1.25rem;">Metadata</div><div class="hint">No full-body storage</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <article class="panel">
+        <div class="panel-head"><h2>Analysis settings</h2><span class="badge">Gmail API</span></div>
+        <div class="field">
+          <label for="query">Scan range</label>
+          <select id="query">
+            <option value="all">All mail</option>
+            <option value="12m">Prioritize last 12 months</option>
+            <option value="6m">Prioritize last 6 months</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="threshold">Cleanup threshold</label>
+          <select id="threshold">
+            <option value="80">80+ only</option>
+            <option value="60" selected>60+ only</option>
+            <option value="40">40+ only</option>
+          </select>
+        </div>
+        <div class="switches" role="tablist" aria-label="Filters">
+          <button class="switch active" data-filter="all">All</button>
+          <button class="switch" data-filter="recommended">Cleanup picks</button>
+          <button class="switch" data-filter="recent">Recent activity</button>
+        </div>
+        <div class="status" id="scanStatus">No analysis yet. Connect Google, then fetch Gmail metadata to build candidates.</div>
+        <p class="footer-note">MVP goal: discover services and rank cleanup priority, not delete accounts.</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Service candidates</h2><span class="badge" id="listBadge">0 items</span></div>
+        <div id="serviceList" class="list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Rules</h2><span class="badge" id="ruleBadge">0 rules</span></div>
+        <div class="field">
+          <label for="ruleName">Add rule</label>
+          <input id="ruleName" type="text" placeholder="e.g. GitHub recent activity rule" />
+        </div>
+        <div class="field">
+          <label for="ruleType">Mail type</label>
+          <select id="ruleType">
+            <option value="LOGIN_ALERT">LOGIN_ALERT</option>
+            <option value="PASSWORD_RESET">PASSWORD_RESET</option>
+            <option value="PURCHASE">PURCHASE</option>
+            <option value="PAYMENT">PAYMENT</option>
+            <option value="SUBSCRIPTION">SUBSCRIPTION</option>
+            <option value="NEWSLETTER">NEWSLETTER</option>
+            <option value="SECURITY">SECURITY</option>
+            <option value="ACCOUNT_UPDATE">ACCOUNT_UPDATE</option>
+            <option value="WELCOME_EMAIL">WELCOME_EMAIL</option>
+            <option value="VERIFY_EMAIL">VERIFY_EMAIL</option>
+            <option value="UNKNOWN">UNKNOWN</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="rulePattern">Pattern</label>
+          <input id="rulePattern" type="text" placeholder="e.g. github.com | sign in | security" />
+        </div>
+        <div class="hero-actions" style="margin-top:0;">
+          <button id="addRuleBtn" class="primary" type="button">Add Rule</button>
+        </div>
+        <div id="ruleList" class="list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Analysis history</h2><span class="badge" id="historyBadge">0 jobs</span></div>
+        <div id="historyList" class="list"></div>
+      </article>
+    </section>
+  </main>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    const API_BASE = 'http://127.0.0.1:8000';
+    const GOOGLE_CLIENT_ID = '738539369909-hun1eaftpgirgp5ap8cokbckoqe544fm.apps.googleusercontent.com';
+    const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+    const STORAGE_KEY = 'dfm-mvp-v1';
+    const DEFAULT_USER_EMAIL = 'demo@example.com';
+
+    const connectBtn = document.getElementById('connectBtn');
+    const scanBtn = document.getElementById('scanBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const scanStatus = document.getElementById('scanStatus');
+    const serviceList = document.getElementById('serviceList');
+    const ruleList = document.getElementById('ruleList');
+    const historyList = document.getElementById('historyList');
+    const ruleNameEl = document.getElementById('ruleName');
+    const ruleTypeEl = document.getElementById('ruleType');
+    const rulePatternEl = document.getElementById('rulePattern');
+    const addRuleBtn = document.getElementById('addRuleBtn');
+    const countValue = document.getElementById('countValue');
+    const recommendValue = document.getElementById('recommendValue');
+    const authValue = document.getElementById('authValue');
+    const listBadge = document.getElementById('listBadge');
+    const ruleBadge = document.getElementById('ruleBadge');
+    const historyBadge = document.getElementById('historyBadge');
+    const filterButtons = [...document.querySelectorAll('.switch')];
+    const queryEl = document.getElementById('query');
+    const thresholdEl = document.getElementById('threshold');
+
+    let accessToken = null;
+    let tokenClient = null;
+    let state = loadState() || { connected: false, filter: 'all', query: 'all', threshold: '60', services: [] };
+
+    function loadState() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; }
+    }
+    function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    function initTokenClient() {
+      if (!window.google?.accounts?.oauth2 || tokenClient) return;
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: GMAIL_SCOPE,
+        callback: (resp) => {
+          if (resp.error) {
+            scanStatus.textContent = `OAuth error: ${resp.error}`;
+            return;
+          }
+          accessToken = resp.access_token;
+          state.connected = true;
+          authValue.textContent = 'Connected';
+          scanStatus.textContent = 'Google connected. Ready to fetch Gmail.';
+          saveState();
+          render();
+        }
+      });
+    }
+
+    function requestGoogleConnect() {
+      initTokenClient();
+      if (!tokenClient) {
+        scanStatus.textContent = 'Google Identity Services is still loading. Try again in a moment.';
+        return;
+      }
+      tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
+    }
+
+    async function fetchJson(url, options = {}) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchGmailMessages() {
+      const queryMap = { all: '', '12m': 'newer_than:12m', '6m': 'newer_than:6m' };
+      const query = queryMap[state.query] || '';
+      const listUrl = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
+      listUrl.searchParams.set('maxResults', '50');
+      listUrl.searchParams.set('q', query);
+
+      const listRes = await fetch(listUrl.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!listRes.ok) throw new Error(`Gmail list failed: HTTP ${listRes.status}`);
+      const listData = await listRes.json();
+      const ids = (listData.messages || []).map(m => m.id);
+
+      return Promise.all(ids.map(async id => {
+        const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
+        url.searchParams.set('format', 'metadata');
+        url.searchParams.set('metadataHeaders', 'From');
+        url.searchParams.append('metadataHeaders', 'Subject');
+        url.searchParams.append('metadataHeaders', 'Date');
+        const res = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) throw new Error(`Gmail detail failed: HTTP ${res.status}`);
+        const data = await res.json();
+        const headers = data.payload?.headers || [];
+        const getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+        return {
+          message_id: data.id,
+          sender: getHeader('From'),
+          subject: getHeader('Subject'),
+          date: getHeader('Date'),
+          sent_at: data.internalDate ? new Date(Number(data.internalDate)).toISOString() : null,
+          snippet: data.snippet || '',
+        };
+      }));
+    }
+
+    async function runAnalysis() {
+      if (!accessToken) {
+        scanStatus.textContent = 'Connect Google first.';
+        return;
+      }
+      scanStatus.textContent = 'Fetching Gmail and calling backend analyze endpoint...';
+      const messages = await fetchGmailMessages();
+      const res = await fetchJson(`${API_BASE}/analyze`, {
+        method: 'POST',
+        body: JSON.stringify({
+          user_email: DEFAULT_USER_EMAIL,
+          query: state.query,
+          threshold: Number(state.threshold),
+          messages,
+        }),
+      });
+
+      state.services = (res.services || []).map(item => ({
+        id: item.id,
+        serviceName: item.canonical_service_name,
+        domain: item.primary_domain,
+        classificationCount: item.evidence.length,
+        activityScore: item.activity_score,
+        confidence: item.confidence,
+        firstSeen: item.first_seen_at,
+        lastSeen: item.last_seen_at,
+        recommendation: item.status,
+        reasons: item.reasons || [],
+        signalBreakdown: item.evidence.reduce((acc, e) => {
+          acc[e.mail_type] = (acc[e.mail_type] || 0) + 1;
+          return acc;
+        }, {}),
+      }));
+      state.connected = true;
+      scanStatus.textContent = `Analysis complete. ${state.services.length} service candidates found.`;
+      saveState();
+      render();
+      await loadRules();
+      await loadHistory();
+    }
+
+    async function loadRules() {
+      const rules = await fetchJson(`${API_BASE}/rules`);
+      ruleBadge.textContent = `${rules.length} rules`;
+      ruleList.innerHTML = rules.length
+        ? rules.map(rule => `
+          <div class="service">
+            <div class="service-top">
+              <div>
+                <div class="service-name">${escapeHtml(rule.name)}</div>
+                <div class="service-meta">${escapeHtml(rule.mail_type)} · ${escapeHtml(rule.pattern)}</div>
+              </div>
+              <span class="pill ${rule.enabled ? 'good' : 'danger'}">${rule.enabled ? 'enabled' : 'disabled'}</span>
+            </div>
+            <div class="service-actions">
+              <button class="ghost" data-rule-action="delete" data-rule-id="${rule.id}">Delete</button>
+            </div>
+          </div>
+        `).join('')
+        : '<div class="empty">No rules yet.</div>';
+
+      ruleList.querySelectorAll('button[data-rule-action="delete"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          try {
+            await fetchJson(`${API_BASE}/rules/${btn.dataset.ruleId}`, { method: 'DELETE' });
+            await loadRules();
+          } catch (err) {
+            scanStatus.textContent = `Rule delete failed: ${err.message}`;
+          }
+        });
+      });
+    }
+
+    async function loadHistory() {
+      const history = await fetchJson(`${API_BASE}/history`);
+      historyBadge.textContent = `${history.length} jobs`;
+      historyList.innerHTML = history.length
+        ? history.map(item => `
+          <div class="service">
+            <div class="service-top">
+              <div>
+                <div class="service-name">Job #${item.id}</div>
+                <div class="service-meta">${item.status} · ${item.processed_messages}/${item.total_messages} messages</div>
+              </div>
+              <span class="pill ${item.status === 'COMPLETED' ? 'good' : 'warn'}">${item.progress}%</span>
+            </div>
+          </div>
+        `).join('')
+        : '<div class="empty">No analysis history yet.</div>';
+    }
+
+    function render() {
+      const threshold = Number(state.threshold);
+      let services = state.services.slice();
+      if (state.filter === 'recommended') services = services.filter(s => s.recommendation !== 'KEEP');
+      if (state.filter === 'recent') services = services.filter(s => s.activityScore >= threshold);
+
+      countValue.textContent = state.services.length;
+      recommendValue.textContent = state.services.filter(s => s.recommendation !== 'KEEP').length;
+      authValue.textContent = state.connected ? 'Connected' : 'Not connected';
+      listBadge.textContent = `${services.length} items`;
+
+      filterButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.filter === state.filter));
+
+      if (!state.services.length) {
+        serviceList.innerHTML = `<div class="empty">No data yet. Run analysis to populate service candidates.</div>`;
+        return;
+      }
+      if (!services.length) {
+        serviceList.innerHTML = `<div class="empty">No items match the current filter.</div>`;
+        return;
+      }
+
+      serviceList.innerHTML = services.map(item => {
+        const tone = item.recommendation === 'KEEP' ? 'good' : item.recommendation === 'REVIEW' ? 'warn' : 'danger';
+        return `
+          <div class="service">
+            <div class="service-top">
+              <div>
+                <div class="service-name">${escapeHtml(item.serviceName)}</div>
+                <div class="service-meta">${escapeHtml(item.domain)} · ${item.classificationCount} signal mails · last seen ${item.lastSeen || '-'}</div>
+              </div>
+              <span class="pill ${tone}">${item.recommendation} ${item.activityScore} pts</span>
+            </div>
+            <div class="pill-row">
+              <span class="pill">confidence ${item.confidence}</span>
+              <span class="pill">first ${item.firstSeen || '-'}</span>
+              <span class="pill">signals ${Object.keys(item.signalBreakdown).join(', ') || 'none'}</span>
+            </div>
+            <div class="pill-row">
+              ${item.reasons.map(reason => `<span class="pill">${escapeHtml(reason)}</span>`).join('')}
+            </div>
+            <div class="service-actions">
+              <button class="ghost" data-action="keep" data-id="${item.id}">Keep</button>
+              <button class="secondary" data-action="review" data-id="${item.id}">Review</button>
+              <button class="primary" data-action="unused" data-id="${item.id}">Likely unused</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      serviceList.querySelectorAll('button[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const service = state.services.find(s => s.id === btn.dataset.id);
+          if (!service) return;
+          scanStatus.textContent = `${service.serviceName} marked as ${btn.dataset.action}.`;
+        });
+      });
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    connectBtn.addEventListener('click', async () => {
+      requestGoogleConnect();
+    });
+    scanBtn.addEventListener('click', () => runAnalysis().catch(err => { scanStatus.textContent = `Analysis failed: ${err.message}`; }));
+    addRuleBtn.addEventListener('click', async () => {
+      try {
+        await fetchJson(`${API_BASE}/rules`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name: ruleNameEl.value.trim() || 'Custom rule',
+            mail_type: ruleTypeEl.value,
+            pattern: rulePatternEl.value.trim(),
+            enabled: true,
+            source: 'UI',
+          }),
+        });
+        ruleNameEl.value = '';
+        rulePatternEl.value = '';
+        await loadRules();
+      } catch (err) {
+        scanStatus.textContent = `Rule add failed: ${err.message}`;
+      }
+    });
+    resetBtn.addEventListener('click', () => {
+      state = { connected: false, filter: 'all', query: 'all', threshold: '60', services: [] };
+      localStorage.removeItem(STORAGE_KEY);
+      scanStatus.textContent = 'State reset.';
+      render();
+    });
+    filterButtons.forEach(button => button.addEventListener('click', () => { state.filter = button.dataset.filter; saveState(); render(); }));
+    queryEl.addEventListener('change', () => { state.query = queryEl.value; saveState(); });
+    thresholdEl.addEventListener('change', () => { state.threshold = thresholdEl.value; saveState(); render(); });
+
+    queryEl.value = state.query;
+    thresholdEl.value = state.threshold;
+    render();
+    loadRules().catch(() => {});
+    loadHistory().catch(() => {});
+    window.addEventListener('load', initTokenClient);
+  </script>
+</body>
+</html>
