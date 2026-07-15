@@ -7,20 +7,20 @@ const { URL } = require('url');
 const PORT = Number(process.env.PORT || 8080);
 const ROOT = __dirname;
 const INDEX_PATH = path.join(ROOT, 'index.html');
-const CREDS_CANDIDATES = [
-  path.join(ROOT, 'credentials.json'),
-  path.join(ROOT, 'Digital-Footprint-Manager-feat-gmail-sender-prototype', 'credentials.json'),
-  path.join(ROOT, 'Digital-Footprint-Manager-feat-gmail-sender-prototype', 'Digital-Footprint-Manager-feat-gmail-sender-prototype', 'credentials.json'),
-];
 const SESSION_COOKIE = 'dfm_sid';
 const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const sessions = new Map();
-const rules = [];
-const history = [];
+
+const CREDENTIALS_PATHS = [
+  path.join(ROOT, 'credentials.json'),
+  path.join(ROOT, 'Digital-Footprint-Manager-feat-gmail-sender-prototype', 'credentials.json'),
+];
 
 function readCredentials() {
-  const file = CREDS_CANDIDATES.find((p) => fs.existsSync(p));
-  if (!file) throw new Error('credentials.json not found');
+  const file = CREDENTIALS_PATHS.find((p) => fs.existsSync(p));
+  if (!file) {
+    throw new Error('credentials.json not found');
+  }
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   return raw.web || raw.installed || raw;
 }
@@ -28,17 +28,13 @@ function readCredentials() {
 const credentials = readCredentials();
 const redirectUri = credentials.redirect_uris?.[0] || `http://localhost:${PORT}/oauth2callback`;
 
-function cookieHeader(value) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax`;
-}
-
 function parseCookies(req) {
-  const raw = req.headers.cookie || '';
-  return raw.split(';').reduce((acc, item) => {
-    const [k, ...rest] = item.trim().split('=');
-    if (k) acc[k] = decodeURIComponent(rest.join('=') || '');
-    return acc;
-  }, {});
+  const out = {};
+  for (const pair of (req.headers.cookie || '').split(';')) {
+    const [k, ...rest] = pair.trim().split('=');
+    if (k) out[k] = decodeURIComponent(rest.join('=') || '');
+  }
+  return out;
 }
 
 function getSession(req) {
@@ -49,7 +45,7 @@ function getSession(req) {
 function setSession(res, data) {
   const sid = crypto.randomBytes(24).toString('hex');
   sessions.set(sid, data);
-  res.setHeader('Set-Cookie', cookieHeader(sid));
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax`);
   return sid;
 }
 
@@ -64,12 +60,8 @@ function send(res, code, body, type = 'text/html; charset=utf-8') {
   res.end(body);
 }
 
-function serveIndex(req, res, session) {
-  let html = fs.readFileSync(INDEX_PATH, 'utf8');
-  html = html.replace(/<script src="https:\/\/accounts\.google\.com\/gsi\/client" async defer><\/script>\n?/g, '');
-  html = html.replace(/<script>\s*const API_BASE = 'http:\/\/127\.0\.0\.1:8000';/m, `<script>\n    const API_BASE = 'http://127.0.0.1:${PORT}';`);
-  html = html.replace(/<button id="connectBtn" class="primary">Connect Google<\/button>/, session?.tokens ? '<button id="connectBtn" class="primary">Reconnect Google</button>' : '<button id="connectBtn" class="primary">Connect Google</button>');
-  html = html.replace('</body>', `<script>window.__SESSION__ = ${JSON.stringify({ connected: !!session?.tokens, email: session?.email || null, origin: `http://localhost:${PORT}` })};</script></body>`);
+function serveIndex(res) {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
   send(res, 200, html);
 }
 
@@ -81,7 +73,6 @@ function authUrl() {
   u.searchParams.set('scope', SCOPE);
   u.searchParams.set('access_type', 'offline');
   u.searchParams.set('prompt', 'consent');
-  u.searchParams.set('include_granted_scopes', 'true');
   return u.toString();
 }
 
@@ -110,44 +101,91 @@ async function gmailFetch(token, pathName) {
   return res.json();
 }
 
-function extractService(from, subject, snippet) {
-  const addr = String(from || '');
-  const domainMatch = addr.match(/@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/);
-  const domain = domainMatch ? domainMatch[1].toLowerCase() : 'unknown';
+function labelFromMessage(subject = '', from = '') {
+  const text = `${subject} ${from}`.toLowerCase();
+  if (/welcome|verify|verification|confirm/.test(text)) return 'WELCOME_EMAIL';
+  if (/login alert|sign[- ]?in|new login/.test(text)) return 'LOGIN_ALERT';
+  if (/password reset|reset your password/.test(text)) return 'PASSWORD_RESET';
+  if (/receipt|invoice|payment|purchase|order/.test(text)) return 'PAYMENT';
+  if (/subscription|renewal|billing/.test(text)) return 'SUBSCRIPTION';
+  if (/security|protect|alert/.test(text)) return 'SECURITY';
+  if (/newsletter|digest|weekly/.test(text)) return 'NEWSLETTER';
+  if (/update|notification/.test(text)) return 'ACCOUNT_UPDATE';
+  return 'UNKNOWN';
+}
+
+function activitySignalForMailType(mailType) {
+  if (mailType === 'LOGIN_ALERT' || mailType === 'PASSWORD_RESET' || mailType === 'PAYMENT') return 'HIGH';
+  if (mailType === 'SUBSCRIPTION' || mailType === 'SECURITY' || mailType === 'ACCOUNT_UPDATE') return 'MEDIUM';
+  if (mailType === 'WELCOME_EMAIL') return 'LOW';
+  if (mailType === 'NEWSLETTER' || mailType === 'VERIFY_EMAIL' || mailType === 'UNKNOWN') return 'NONE';
+  return 'NONE';
+}
+
+function canonicalServiceName(from = '') {
+  const match = String(from).match(/@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/);
+  const domain = match?.[1]?.toLowerCase() || 'unknown';
   return {
-    service: domain.replace(/^mail\./, '').replace(/^www\./, '').split('.')[0],
-    from,
-    subject,
-    snippet,
     domain,
+    service: domain.replace(/^mail\./, '').replace(/^www\./, '').split('.')[0],
   };
 }
 
 async function collectServices(token) {
-  const list = await gmailFetch(token, 'users/me/messages?maxResults=30');
+  const list = await gmailFetch(token, 'users/me/messages?maxResults=40');
   const ids = (list.messages || []).map((m) => m.id);
   const out = new Map();
+
   for (const id of ids) {
     const msg = await gmailFetch(token, `users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`);
     const headers = msg.payload?.headers || [];
     const getHeader = (name) => headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
     const from = getHeader('From');
     const subject = getHeader('Subject');
-    const item = extractService(from, subject, msg.snippet || '');
-    if (!out.has(item.service)) out.set(item.service, { ...item, count: 0, lastSeen: null });
-    const cur = out.get(item.service);
-    cur.count += 1;
-    cur.lastSeen = getHeader('Date') || cur.lastSeen;
-  }
-  return [...out.values()].sort((a, b) => b.count - a.count);
-}
+    const date = getHeader('Date');
+    const { domain, service } = canonicalServiceName(from);
+    const mailType = labelFromMessage(subject, from);
+    const activitySignal = activitySignalForMailType(mailType);
+    const scoreBoost = activitySignal === 'HIGH' ? 40 : activitySignal === 'MEDIUM' ? 20 : activitySignal === 'LOW' ? 10 : 0;
+    const current = out.get(service) || {
+      service,
+      domain,
+      from,
+      count: 0,
+      firstSeen: date,
+      lastSeen: date,
+      score: 0,
+      mailTypes: new Set(),
+      reasons: [],
+    };
 
-function parseBody(req) {
-  return new Promise((resolve) => {
-    let data = '';
-    req.on('data', (c) => (data += c));
-    req.on('end', () => resolve(data));
-  });
+    current.count += 1;
+    current.lastSeen = date || current.lastSeen;
+    current.firstSeen = current.firstSeen || date;
+    current.score += scoreBoost;
+    current.mailTypes.add(mailType);
+    current.reasons.push({ mailType, activitySignal, subject });
+    out.set(service, current);
+  }
+
+  return [...out.values()]
+    .map((item) => {
+      const uniqueTypes = [...item.mailTypes];
+      const confidence = Math.min(100, 35 + item.count * 8 + (uniqueTypes.includes('LOGIN_ALERT') ? 15 : 0));
+      const recommendation = item.score >= 60 ? 'KEEP' : item.score >= 30 ? 'REVIEW' : 'LIKELY_UNUSED';
+      return {
+        service: item.service,
+        domain: item.domain,
+        count: item.count,
+        firstSeen: item.firstSeen,
+        lastSeen: item.lastSeen,
+        activityScore: Math.min(100, item.score),
+        confidence,
+        recommendation,
+        reasons: item.reasons.slice(0, 3).map((r) => `${r.mailType} / ${r.activitySignal}`),
+      };
+    })
+    .sort((a, b) => b.activityScore - a.activityScore || b.count - a.count);
 }
 
 const server = http.createServer(async (req, res) => {
@@ -155,24 +193,17 @@ const server = http.createServer(async (req, res) => {
     const u = new URL(req.url, `http://${req.headers.host}`);
     const session = getSession(req);
 
-    if (u.pathname === '/') return serveIndex(req, res, session);
-
+    if (u.pathname === '/') return serveIndex(res);
     if (u.pathname === '/auth/google') return res.writeHead(302, { Location: authUrl() }).end();
 
     if (u.pathname === '/oauth2callback') {
-      const err = u.searchParams.get('error');
-      if (err) return send(res, 400, `OAuth error: ${err}`);
+      const error = u.searchParams.get('error');
+      if (error) return send(res, 400, `OAuth error: ${error}`);
       const code = u.searchParams.get('code');
       if (!code) return send(res, 400, 'Missing code');
       const tokens = await exchangeCode(code);
-      const sid = session ? parseCookies(req)[SESSION_COOKIE] : setSession(res, { tokens: null, email: null });
-      const who = await gmailFetch(tokens.access_token, 'users/me/profile').catch(() => null);
-      sessions.set(sid, { tokens, email: who?.emailAddress || null });
-      return res.writeHead(302, { Location: '/' }).end();
-    }
-
-    if (u.pathname === '/logout') {
-      clearSession(res, req);
+      const profile = await gmailFetch(tokens.access_token, 'users/me/profile').catch(() => null);
+      setSession(res, { tokens, email: profile?.emailAddress || null });
       return res.writeHead(302, { Location: '/' }).end();
     }
 
@@ -180,51 +211,17 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, JSON.stringify({ connected: !!session?.tokens, email: session?.email || null }), 'application/json; charset=utf-8');
     }
 
-    if (u.pathname === '/rules' && req.method === 'GET') {
-      return send(res, 200, JSON.stringify(rules), 'application/json; charset=utf-8');
-    }
-
-    if (u.pathname === '/rules' && req.method === 'POST') {
-      const body = JSON.parse(await parseBody(req) || '{}');
-      const rule = {
-        id: crypto.randomUUID(),
-        name: String(body.name || 'Custom rule'),
-        mail_type: String(body.mail_type || 'UNKNOWN'),
-        pattern: String(body.pattern || ''),
-        enabled: body.enabled !== false,
-        source: String(body.source || 'UI'),
-        created_at: new Date().toISOString(),
-      };
-      rules.unshift(rule);
-      return send(res, 200, JSON.stringify(rule), 'application/json; charset=utf-8');
-    }
-
-    if (u.pathname.startsWith('/rules/') && req.method === 'DELETE') {
-      const id = u.pathname.split('/').pop();
-      const idx = rules.findIndex((r) => r.id === id);
-      if (idx >= 0) rules.splice(idx, 1);
-      return send(res, 200, JSON.stringify({ deleted: true }), 'application/json; charset=utf-8');
-    }
-
-    if (u.pathname === '/history' && req.method === 'GET') {
-      return send(res, 200, JSON.stringify(history), 'application/json; charset=utf-8');
-    }
-
     if (u.pathname === '/api/senders' && req.method === 'POST') {
-      if (!session?.tokens?.access_token) return send(res, 401, JSON.stringify({ error: 'Not connected' }), 'application/json; charset=utf-8');
-      const body = JSON.parse(await parseBody(req) || '{}');
+      if (!session?.tokens?.access_token) {
+        return send(res, 401, JSON.stringify({ error: 'Not connected' }), 'application/json; charset=utf-8');
+      }
       const services = await collectServices(session.tokens.access_token);
-      history.unshift({
-        id: history.length + 1,
-        user_id: 1,
-        status: 'COMPLETED',
-        progress: 100,
-        processed_messages: services.length,
-        total_messages: services.length,
-        started_at: new Date().toISOString(),
-        finished_at: new Date().toISOString(),
-      });
-      return send(res, 200, JSON.stringify({ ok: true, query: body.query || 'all', services }), 'application/json; charset=utf-8');
+      return send(res, 200, JSON.stringify({ ok: true, services }), 'application/json; charset=utf-8');
+    }
+
+    if (u.pathname === '/logout') {
+      clearSession(res, req);
+      return res.writeHead(302, { Location: '/' }).end();
     }
 
     return send(res, 404, 'Not found');
