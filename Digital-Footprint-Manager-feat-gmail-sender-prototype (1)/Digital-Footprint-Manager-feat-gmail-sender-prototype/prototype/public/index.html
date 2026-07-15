@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DFM — Gmail senders</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        max-width: 720px;
+        margin: 24px auto;
+        padding: 0 16px;
+        line-height: 1.4;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 12px 0;
+      }
+      button {
+        padding: 8px 14px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      #meta,
+      #status,
+      #progress {
+        color: #444;
+        font-size: 14px;
+        margin: 8px 0;
+      }
+      #err {
+        color: #b00020;
+        white-space: pre-wrap;
+      }
+      .panel {
+        border: 1px solid #ddd;
+        padding: 12px;
+        margin: 12px 0;
+      }
+      .hidden {
+        display: none !important;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid #ddd;
+        font-size: 14px;
+      }
+      th {
+        background: #f3f3f3;
+      }
+      .note {
+        font-size: 13px;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Gmail 발신자 리스트</h1>
+    <p class="note">
+      서비스 로그인과 Gmail 접근은 분리됩니다. Gmail 토큰·메일 헤더는 브라우저에만 두고,
+      서버에는 로그인한 사용자 세션과(선택) 도메인 후보만 저장합니다.
+    </p>
+
+    <div id="loginPanel" class="panel">
+      <h2>1. 서비스 로그인</h2>
+      <p>Google 계정으로 앱에 로그인합니다. (이 단계만으로는 Gmail을 읽지 않습니다.)</p>
+      <div id="googleBtn"></div>
+      <div id="loginStatus"></div>
+    </div>
+
+    <div id="appPanel" class="panel hidden">
+      <h2>2. Gmail 스캔</h2>
+      <div id="status"></div>
+      <div class="row">
+        <button id="scan" type="button">Gmail 연결 후 발신자 불러오기</button>
+        <button id="save" type="button" disabled>도메인 후보 서버에 저장</button>
+        <button id="logout" type="button">로그아웃</button>
+      </div>
+      <div id="progress"></div>
+      <div id="meta"></div>
+      <div id="err"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>이름</th>
+            <th>이메일</th>
+            <th>건수</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
