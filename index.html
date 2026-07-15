@@ -280,6 +280,21 @@
       render();
     }
 
+    async function syncSession() {
+      try {
+        const me = await fetchJson(`${API_BASE}/api/me`);
+        if (me.connected) {
+          state.connected = true;
+          authValue.textContent = 'Connected';
+          scanStatus.textContent = me.email ? `Connected as ${me.email}` : 'Connected';
+          saveState();
+          render();
+        }
+      } catch {
+        // Ignore first-load sync failures.
+      }
+    }
+
     async function loadRules() {
       const rules = await fetchJson(`${API_BASE}/rules`);
       ruleBadge.textContent = `${rules.length} rules`;
@@ -437,6 +452,7 @@
     render();
     loadRules().catch(() => {});
     loadHistory().catch(() => {});
+    syncSession();
   </script>
 </body>
 </html>
