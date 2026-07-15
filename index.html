@@ -205,14 +205,9 @@
     </section>
   </main>
 
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
-    const API_BASE = 'http://127.0.0.1:8000';
-    const GOOGLE_CLIENT_ID = '738539369909-hun1eaftpgirgp5ap8cokbckoqe544fm.apps.googleusercontent.com';
-    const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+    const API_BASE = window.location.origin;
     const STORAGE_KEY = 'dfm-mvp-v1';
-    const DEFAULT_USER_EMAIL = 'demo@example.com';
-    const APP_ORIGIN = window.location.origin;
 
     const connectBtn = document.getElementById('connectBtn');
     const scanBtn = document.getElementById('scanBtn');
@@ -235,8 +230,6 @@
     const queryEl = document.getElementById('query');
     const thresholdEl = document.getElementById('threshold');
 
-    let accessToken = null;
-    let tokenClient = null;
     let state = loadState() || { connected: false, filter: 'all', query: 'all', threshold: '60', services: [] };
 
     function loadState() {
@@ -244,41 +237,8 @@
     }
     function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
-    function originHelpText() {
-      return `Current origin: ${APP_ORIGIN}. Add this exact origin to Google Cloud Console Authorized JavaScript origins. Also add http://localhost and http://127.0.0.1 if you use them for local testing.`;
-    }
-
-    function initTokenClient() {
-      if (!window.google?.accounts?.oauth2 || tokenClient) return;
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: GMAIL_SCOPE,
-        callback: (resp) => {
-          if (resp.error) {
-            scanStatus.textContent = `OAuth error: ${resp.error}. Check Authorized JavaScript origins for ${APP_ORIGIN}.`;
-            return;
-          }
-          accessToken = resp.access_token;
-          state.connected = true;
-          authValue.textContent = 'Connected';
-          scanStatus.textContent = 'Google connected. Ready to fetch Gmail.';
-          saveState();
-          render();
-        }
-      });
-    }
-
-    function requestGoogleConnect() {
-      initTokenClient();
-      if (!tokenClient) {
-        scanStatus.textContent = 'Google Identity Services is still loading. Try again in a moment.';
-        return;
-      }
-      if (APP_ORIGIN === 'null' || APP_ORIGIN === 'file://') {
-        scanStatus.textContent = 'Open this page from a local server such as http://localhost, not from file://';
-        return;
-      }
-      tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
+    async function requestGoogleConnect() {
+      window.location.href = `${API_BASE}/auth/google`;
     }
 
     async function fetchJson(url, options = {}) {
@@ -290,83 +250,34 @@
       return res.json();
     }
 
-    async function fetchGmailMessages() {
-      const queryMap = { all: '', '12m': 'newer_than:12m', '6m': 'newer_than:6m' };
-      const query = queryMap[state.query] || '';
-      const listUrl = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
-      listUrl.searchParams.set('maxResults', '50');
-      listUrl.searchParams.set('q', query);
-
-      const listRes = await fetch(listUrl.toString(), {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!listRes.ok) throw new Error(`Gmail list failed: HTTP ${listRes.status}`);
-      const listData = await listRes.json();
-      const ids = (listData.messages || []).map(m => m.id);
-
-      return Promise.all(ids.map(async id => {
-        const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
-        url.searchParams.set('format', 'metadata');
-        url.searchParams.set('metadataHeaders', 'From');
-        url.searchParams.append('metadataHeaders', 'Subject');
-        url.searchParams.append('metadataHeaders', 'Date');
-        const res = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) throw new Error(`Gmail detail failed: HTTP ${res.status}`);
-        const data = await res.json();
-        const headers = data.payload?.headers || [];
-        const getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
-        return {
-          message_id: data.id,
-          sender: getHeader('From'),
-          subject: getHeader('Subject'),
-          date: getHeader('Date'),
-          sent_at: data.internalDate ? new Date(Number(data.internalDate)).toISOString() : null,
-          snippet: data.snippet || '',
-        };
-      }));
-    }
-
     async function runAnalysis() {
-      if (!accessToken) {
-        scanStatus.textContent = 'Connect Google first.';
-        return;
-      }
-      scanStatus.textContent = 'Fetching Gmail and calling backend analyze endpoint...';
-      const messages = await fetchGmailMessages();
-      const res = await fetchJson(`${API_BASE}/analyze`, {
+      scanStatus.textContent = 'Fetching Gmail through server...';
+      const res = await fetchJson(`${API_BASE}/api/senders`, {
         method: 'POST',
         body: JSON.stringify({
-          user_email: DEFAULT_USER_EMAIL,
           query: state.query,
           threshold: Number(state.threshold),
-          messages,
         }),
       });
 
-      state.services = (res.services || []).map(item => ({
-        id: item.id,
-        serviceName: item.canonical_service_name,
-        domain: item.primary_domain,
-        classificationCount: item.evidence.length,
-        activityScore: item.activity_score,
-        confidence: item.confidence,
-        firstSeen: item.first_seen_at,
-        lastSeen: item.last_seen_at,
-        recommendation: item.status,
-        reasons: item.reasons || [],
-        signalBreakdown: item.evidence.reduce((acc, e) => {
-          acc[e.mail_type] = (acc[e.mail_type] || 0) + 1;
-          return acc;
-        }, {}),
+      state.services = (res.services || []).map((item, idx) => ({
+        id: `${item.service}-${idx}`,
+        serviceName: item.service,
+        domain: item.domain,
+        classificationCount: item.count,
+        activityScore: Math.min(100, item.count * 20),
+        confidence: Math.min(100, item.count * 18),
+        firstSeen: item.firstSeen,
+        lastSeen: item.lastSeen,
+        recommendation: item.count >= 3 ? 'KEEP' : item.count === 2 ? 'REVIEW' : 'LIKELY_UNUSED',
+        reasons: [item.from, item.subject].filter(Boolean),
+        signalBreakdown: { MAIL: item.count },
       }));
       state.connected = true;
+      authValue.textContent = 'Connected';
       scanStatus.textContent = `Analysis complete. ${state.services.length} service candidates found.`;
       saveState();
       render();
-      await loadRules();
-      await loadHistory();
     }
 
     async function loadRules() {
@@ -450,7 +361,7 @@
                 <div class="service-name">${escapeHtml(item.serviceName)}</div>
                 <div class="service-meta">${escapeHtml(item.domain)} · ${item.classificationCount} signal mails · last seen ${item.lastSeen || '-'}</div>
               </div>
-              <span class="pill ${tone}">${item.recommendation} ${item.activityScore} pts</span>
+      <span class="pill ${tone}">${item.recommendation} ${item.activityScore} pts</span>
             </div>
             <div class="pill-row">
               <span class="pill">confidence ${item.confidence}</span>
@@ -488,7 +399,7 @@
     }
 
     connectBtn.addEventListener('click', async () => {
-      requestGoogleConnect();
+      await requestGoogleConnect();
     });
     scanBtn.addEventListener('click', () => runAnalysis().catch(err => { scanStatus.textContent = `Analysis failed: ${err.message}`; }));
     addRuleBtn.addEventListener('click', async () => {
@@ -522,15 +433,10 @@
 
     queryEl.value = state.query;
     thresholdEl.value = state.threshold;
-    scanStatus.textContent = originHelpText();
+    scanStatus.textContent = 'Connect Google to start.';
     render();
     loadRules().catch(() => {});
     loadHistory().catch(() => {});
-    window.addEventListener('load', () => {
-      if (APP_ORIGIN === 'null' || APP_ORIGIN === 'file://') {
-        scanStatus.textContent = 'This page is running from file://. Please open it from http://localhost or your deployed domain.';
-      }
-    });
   </script>
 </body>
 </html>
