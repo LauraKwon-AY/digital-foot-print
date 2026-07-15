@@ -135,7 +135,7 @@
 
     <section class="layout">
       <article class="panel">
-        <div class="panel-head"><h2>Analysis settings</h2><span class="badge">Gmail API</span></div>
+        <div class="panel-head"><h2>Quick scan</h2><span class="badge">Gmail API</span></div>
         <div class="field">
           <label for="query">Scan range</label>
           <select id="query">
@@ -144,63 +144,13 @@
             <option value="6m">Prioritize last 6 months</option>
           </select>
         </div>
-        <div class="field">
-          <label for="threshold">Cleanup threshold</label>
-          <select id="threshold">
-            <option value="80">80+ only</option>
-            <option value="60" selected>60+ only</option>
-            <option value="40">40+ only</option>
-          </select>
-        </div>
-        <div class="switches" role="tablist" aria-label="Filters">
-          <button class="switch active" data-filter="all">All</button>
-          <button class="switch" data-filter="recommended">Cleanup picks</button>
-          <button class="switch" data-filter="recent">Recent activity</button>
-        </div>
-        <div class="status" id="scanStatus">No analysis yet. Connect Google, then fetch Gmail metadata to build candidates.</div>
+        <div class="status" id="scanStatus">Connect Google to start.</div>
         <p class="footer-note">MVP goal: discover services and rank cleanup priority, not delete accounts.</p>
       </article>
 
       <article class="panel">
         <div class="panel-head"><h2>Service candidates</h2><span class="badge" id="listBadge">0 items</span></div>
         <div id="serviceList" class="list"></div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-head"><h2>Rules</h2><span class="badge" id="ruleBadge">0 rules</span></div>
-        <div class="field">
-          <label for="ruleName">Add rule</label>
-          <input id="ruleName" type="text" placeholder="e.g. GitHub recent activity rule" />
-        </div>
-        <div class="field">
-          <label for="ruleType">Mail type</label>
-          <select id="ruleType">
-            <option value="LOGIN_ALERT">LOGIN_ALERT</option>
-            <option value="PASSWORD_RESET">PASSWORD_RESET</option>
-            <option value="PURCHASE">PURCHASE</option>
-            <option value="PAYMENT">PAYMENT</option>
-            <option value="SUBSCRIPTION">SUBSCRIPTION</option>
-            <option value="NEWSLETTER">NEWSLETTER</option>
-            <option value="SECURITY">SECURITY</option>
-            <option value="ACCOUNT_UPDATE">ACCOUNT_UPDATE</option>
-            <option value="WELCOME_EMAIL">WELCOME_EMAIL</option>
-            <option value="VERIFY_EMAIL">VERIFY_EMAIL</option>
-            <option value="UNKNOWN">UNKNOWN</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="rulePattern">Pattern</label>
-          <input id="rulePattern" type="text" placeholder="e.g. github.com | sign in | security" />
-        </div>
-        <div class="hero-actions" style="margin-top:0;">
-          <button id="addRuleBtn" class="primary" type="button">Add Rule</button>
-        </div>
-        <div id="ruleList" class="list"></div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-head"><h2>Analysis history</h2><span class="badge" id="historyBadge">0 jobs</span></div>
-        <div id="historyList" class="list"></div>
       </article>
     </section>
   </main>
@@ -214,21 +164,11 @@
     const resetBtn = document.getElementById('resetBtn');
     const scanStatus = document.getElementById('scanStatus');
     const serviceList = document.getElementById('serviceList');
-    const ruleList = document.getElementById('ruleList');
-    const historyList = document.getElementById('historyList');
-    const ruleNameEl = document.getElementById('ruleName');
-    const ruleTypeEl = document.getElementById('ruleType');
-    const rulePatternEl = document.getElementById('rulePattern');
-    const addRuleBtn = document.getElementById('addRuleBtn');
     const countValue = document.getElementById('countValue');
     const recommendValue = document.getElementById('recommendValue');
     const authValue = document.getElementById('authValue');
     const listBadge = document.getElementById('listBadge');
-    const ruleBadge = document.getElementById('ruleBadge');
-    const historyBadge = document.getElementById('historyBadge');
-    const filterButtons = [...document.querySelectorAll('.switch')];
     const queryEl = document.getElementById('query');
-    const thresholdEl = document.getElementById('threshold');
 
     let state = loadState() || { connected: false, filter: 'all', query: 'all', threshold: '60', services: [] };
 
@@ -256,7 +196,6 @@
         method: 'POST',
         body: JSON.stringify({
           query: state.query,
-          threshold: Number(state.threshold),
         }),
       });
 
@@ -280,83 +219,13 @@
       render();
     }
 
-    async function syncSession() {
-      try {
-        const me = await fetchJson(`${API_BASE}/api/me`);
-        if (me.connected) {
-          state.connected = true;
-          authValue.textContent = 'Connected';
-          scanStatus.textContent = me.email ? `Connected as ${me.email}` : 'Connected';
-          saveState();
-          render();
-        }
-      } catch {
-        // Ignore first-load sync failures.
-      }
-    }
-
-    async function loadRules() {
-      const rules = await fetchJson(`${API_BASE}/rules`);
-      ruleBadge.textContent = `${rules.length} rules`;
-      ruleList.innerHTML = rules.length
-        ? rules.map(rule => `
-          <div class="service">
-            <div class="service-top">
-              <div>
-                <div class="service-name">${escapeHtml(rule.name)}</div>
-                <div class="service-meta">${escapeHtml(rule.mail_type)} · ${escapeHtml(rule.pattern)}</div>
-              </div>
-              <span class="pill ${rule.enabled ? 'good' : 'danger'}">${rule.enabled ? 'enabled' : 'disabled'}</span>
-            </div>
-            <div class="service-actions">
-              <button class="ghost" data-rule-action="delete" data-rule-id="${rule.id}">Delete</button>
-            </div>
-          </div>
-        `).join('')
-        : '<div class="empty">No rules yet.</div>';
-
-      ruleList.querySelectorAll('button[data-rule-action="delete"]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          try {
-            await fetchJson(`${API_BASE}/rules/${btn.dataset.ruleId}`, { method: 'DELETE' });
-            await loadRules();
-          } catch (err) {
-            scanStatus.textContent = `Rule delete failed: ${err.message}`;
-          }
-        });
-      });
-    }
-
-    async function loadHistory() {
-      const history = await fetchJson(`${API_BASE}/history`);
-      historyBadge.textContent = `${history.length} jobs`;
-      historyList.innerHTML = history.length
-        ? history.map(item => `
-          <div class="service">
-            <div class="service-top">
-              <div>
-                <div class="service-name">Job #${item.id}</div>
-                <div class="service-meta">${item.status} · ${item.processed_messages}/${item.total_messages} messages</div>
-              </div>
-              <span class="pill ${item.status === 'COMPLETED' ? 'good' : 'warn'}">${item.progress}%</span>
-            </div>
-          </div>
-        `).join('')
-        : '<div class="empty">No analysis history yet.</div>';
-    }
-
     function render() {
-      const threshold = Number(state.threshold);
       let services = state.services.slice();
-      if (state.filter === 'recommended') services = services.filter(s => s.recommendation !== 'KEEP');
-      if (state.filter === 'recent') services = services.filter(s => s.activityScore >= threshold);
 
       countValue.textContent = state.services.length;
       recommendValue.textContent = state.services.filter(s => s.recommendation !== 'KEEP').length;
       authValue.textContent = state.connected ? 'Connected' : 'Not connected';
       listBadge.textContent = `${services.length} items`;
-
-      filterButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.filter === state.filter));
 
       if (!state.services.length) {
         serviceList.innerHTML = `<div class="empty">No data yet. Run analysis to populate service candidates.</div>`;
@@ -381,7 +250,7 @@
             <div class="pill-row">
               <span class="pill">confidence ${item.confidence}</span>
               <span class="pill">first ${item.firstSeen || '-'}</span>
-              <span class="pill">signals ${Object.keys(item.signalBreakdown).join(', ') || 'none'}</span>
+              <span class="pill">messages ${item.classificationCount}</span>
             </div>
             <div class="pill-row">
               ${item.reasons.map(reason => `<span class="pill">${escapeHtml(reason)}</span>`).join('')}
@@ -389,7 +258,6 @@
             <div class="service-actions">
               <button class="ghost" data-action="keep" data-id="${item.id}">Keep</button>
               <button class="secondary" data-action="review" data-id="${item.id}">Review</button>
-              <button class="primary" data-action="unused" data-id="${item.id}">Likely unused</button>
             </div>
           </div>
         `;
@@ -417,42 +285,17 @@
       await requestGoogleConnect();
     });
     scanBtn.addEventListener('click', () => runAnalysis().catch(err => { scanStatus.textContent = `Analysis failed: ${err.message}`; }));
-    addRuleBtn.addEventListener('click', async () => {
-      try {
-        await fetchJson(`${API_BASE}/rules`, {
-          method: 'POST',
-          body: JSON.stringify({
-            name: ruleNameEl.value.trim() || 'Custom rule',
-            mail_type: ruleTypeEl.value,
-            pattern: rulePatternEl.value.trim(),
-            enabled: true,
-            source: 'UI',
-          }),
-        });
-        ruleNameEl.value = '';
-        rulePatternEl.value = '';
-        await loadRules();
-      } catch (err) {
-        scanStatus.textContent = `Rule add failed: ${err.message}`;
-      }
-    });
     resetBtn.addEventListener('click', () => {
       state = { connected: false, filter: 'all', query: 'all', threshold: '60', services: [] };
       localStorage.removeItem(STORAGE_KEY);
       scanStatus.textContent = 'State reset.';
       render();
     });
-    filterButtons.forEach(button => button.addEventListener('click', () => { state.filter = button.dataset.filter; saveState(); render(); }));
     queryEl.addEventListener('change', () => { state.query = queryEl.value; saveState(); });
-    thresholdEl.addEventListener('change', () => { state.threshold = thresholdEl.value; saveState(); render(); });
 
     queryEl.value = state.query;
-    thresholdEl.value = state.threshold;
     scanStatus.textContent = 'Connect Google to start.';
     render();
-    loadRules().catch(() => {});
-    loadHistory().catch(() => {});
-    syncSession();
   </script>
 </body>
 </html>
