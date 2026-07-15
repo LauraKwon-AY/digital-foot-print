@@ -15,6 +15,8 @@ const CREDS_CANDIDATES = [
 const SESSION_COOKIE = 'dfm_sid';
 const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const sessions = new Map();
+const rules = [];
+const history = [];
 
 function readCredentials() {
   const file = CREDS_CANDIDATES.find((p) => fs.existsSync(p));
@@ -178,10 +180,50 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, JSON.stringify({ connected: !!session?.tokens, email: session?.email || null }), 'application/json; charset=utf-8');
     }
 
+    if (u.pathname === '/rules' && req.method === 'GET') {
+      return send(res, 200, JSON.stringify(rules), 'application/json; charset=utf-8');
+    }
+
+    if (u.pathname === '/rules' && req.method === 'POST') {
+      const body = JSON.parse(await parseBody(req) || '{}');
+      const rule = {
+        id: crypto.randomUUID(),
+        name: String(body.name || 'Custom rule'),
+        mail_type: String(body.mail_type || 'UNKNOWN'),
+        pattern: String(body.pattern || ''),
+        enabled: body.enabled !== false,
+        source: String(body.source || 'UI'),
+        created_at: new Date().toISOString(),
+      };
+      rules.unshift(rule);
+      return send(res, 200, JSON.stringify(rule), 'application/json; charset=utf-8');
+    }
+
+    if (u.pathname.startsWith('/rules/') && req.method === 'DELETE') {
+      const id = u.pathname.split('/').pop();
+      const idx = rules.findIndex((r) => r.id === id);
+      if (idx >= 0) rules.splice(idx, 1);
+      return send(res, 200, JSON.stringify({ deleted: true }), 'application/json; charset=utf-8');
+    }
+
+    if (u.pathname === '/history' && req.method === 'GET') {
+      return send(res, 200, JSON.stringify(history), 'application/json; charset=utf-8');
+    }
+
     if (u.pathname === '/api/senders' && req.method === 'POST') {
       if (!session?.tokens?.access_token) return send(res, 401, JSON.stringify({ error: 'Not connected' }), 'application/json; charset=utf-8');
       const body = JSON.parse(await parseBody(req) || '{}');
       const services = await collectServices(session.tokens.access_token);
+      history.unshift({
+        id: history.length + 1,
+        user_id: 1,
+        status: 'COMPLETED',
+        progress: 100,
+        processed_messages: services.length,
+        total_messages: services.length,
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+      });
       return send(res, 200, JSON.stringify({ ok: true, query: body.query || 'all', services }), 'application/json; charset=utf-8');
     }
 
