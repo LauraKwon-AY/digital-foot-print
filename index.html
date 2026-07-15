@@ -245,7 +245,7 @@
     function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
     function originHelpText() {
-      return `Current origin: ${APP_ORIGIN}. If this is not added to Google Cloud Console Authorized JavaScript origins, Google sign-in will fail.`;
+      return `Current origin: ${APP_ORIGIN}. Add this exact origin to Google Cloud Console Authorized JavaScript origins. Also add http://localhost and http://127.0.0.1 if you use them for local testing.`;
     }
 
     function initTokenClient() {
@@ -255,7 +255,7 @@
         scope: GMAIL_SCOPE,
         callback: (resp) => {
           if (resp.error) {
-            scanStatus.textContent = `OAuth error: ${resp.error}`;
+            scanStatus.textContent = `OAuth error: ${resp.error}. Check Authorized JavaScript origins for ${APP_ORIGIN}.`;
             return;
           }
           accessToken = resp.access_token;
@@ -526,7 +526,11 @@
     render();
     loadRules().catch(() => {});
     loadHistory().catch(() => {});
-    window.addEventListener('load', initTokenClient);
+    window.addEventListener('load', () => {
+      if (APP_ORIGIN === 'null' || APP_ORIGIN === 'file://') {
+        scanStatus.textContent = 'This page is running from file://. Please open it from http://localhost or your deployed domain.';
+      }
+    });
   </script>
 </body>
 </html>
